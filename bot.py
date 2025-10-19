@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Bot - Freepik Link Generator
-GitHub + Render Version
+Optimized for Railway
 """
 
 import os
@@ -9,82 +9,67 @@ import re
 import time
 import random
 import asyncio
+import requests
 from urllib.parse import quote_plus
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # تنظیمات
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8458966976:AAGvp6xc5t3z62RAmNgHpBOxeQmVye0MUME')
-SCROLL_PAUSE = 2
-MAX_SCROLLS = 10
+BOT_TOKEN = os.environ.get('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 
-def setup_driver():
-    """تنظیم مرورگر"""
-    opts = Options()
-    opts.add_argument("--headless")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
-    
+def get_image_links_alternative(query, num_links):
+    """روش جایگزین بدون Selenium - استفاده از API یا اسکرپ ساده"""
     try:
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=opts
-        )
-        return driver
-    except Exception as e:
-        print(f"❌ خطا در مرورگر: {e}")
-        return None
-
-def get_image_links(query, num_links):
-    """دریافت لینک عکس‌ها از Freepik"""
-    driver = None
-    try:
-        driver = setup_driver()
-        if not driver:
+        print(f"🔍 جستجوی جایگزین برای: {query}")
+        
+        # استفاده از Google Images API ساده
+        search_url = f"https://www.freepik.com/search?query={quote_plus(query)}"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+        }
+        
+        response = requests.get(search_url, headers=headers, timeout=15)
+        
+        if response.status_code != 200:
+            print(f"❌ خطا در دریافت صفحه: {response.status_code}")
             return []
         
-        # جستجو در Freepik
-        search_url = f"https://www.freepik.com/search?query={quote_plus(query)}"
-        driver.get(search_url)
-        time.sleep(5)
-        
-        # اسکرول
-        for i in range(MAX_SCROLLS):
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(SCROLL_PAUSE)
-        
-        # استخراج لینک‌ها
+        # استخراج لینک‌های عکس از HTML
+        html_content = response.text
         image_urls = set()
-        imgs = driver.find_elements(By.TAG_NAME, "img")
         
-        for img in imgs:
-            try:
-                src = img.get_attribute("src") or img.get_attribute("data-src")
-                if src and any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png']):
-                    if 'freepik.com' in src and 'premium' not in src.lower():
-                        clean_url = src.split('?')[0]
-                        image_urls.add(clean_url)
-            except:
-                continue
+        # پیدا کردن لینک‌های عکس در HTML
+        image_patterns = [
+            r'src="(https://img\.freepik\.com/[^"]+\.(jpg|jpeg|png|webp)[^"]*)"',
+            r'data-src="(https://img\.freepik\.com/[^"]+\.(jpg|jpeg|png|webp)[^"]*)"',
+            r'https://img\.freepik\.com/[^"\s]+\.(jpg|jpeg|png|webp)'
+        ]
         
-        # انتخاب تصادفی
+        for pattern in image_patterns:
+            matches = re.findall(pattern, html_content, re.IGNORECASE)
+            for match in matches:
+                if isinstance(match, tuple):
+                    url = match[0]
+                else:
+                    url = match
+                
+                if 'premium' not in url.lower() and 'watermark' not in url.lower():
+                    clean_url = url.split('?')[0]
+                    image_urls.add(clean_url)
+        
+        print(f"✅ {len(image_urls)} لینک پیدا شد")
         image_urls = list(image_urls)
         random.shuffle(image_urls)
-        return image_urls[:num_links] if len(image_urls) > num_links else image_urls
+        return image_urls[:num_links] if image_urls else []
         
     except Exception as e:
-        print(f"❌ خطا: {e}")
+        print(f"❌ خطا در روش جایگزین: {e}")
         return []
-    finally:
-        if driver:
-            driver.quit()
 
 # دستورات ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -115,24 +100,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data['num_links'] = num_links
             await update.message.reply_text("⏳ در حال جستجو...")
             
-            # دریافت لینک‌ها
-            links = get_image_links(user_data['query'], num_links)
+            # دریافت لینک‌ها با روش جایگزین
+            links = get_image_links_alternative(user_data['query'], num_links)
             
             if links:
                 await update.message.reply_text(f"✅ {len(links)} لینک پیدا شد:")
                 for i, link in enumerate(links, 1):
+                    # کوتاه کردن لینک برای نمایش بهتر
+                    display_link = link[:80] + "..." if len(link) > 80 else link
                     await update.message.reply_text(f"📸 {i}:\n`{link}`", parse_mode='Markdown')
                     await asyncio.sleep(0.3)
             else:
-                await update.message.reply_text("❌ عکسی پیدا نشد")
+                await update.message.reply_text(
+                    "❌ عکسی پیدا نشد\n\n"
+                    "• عبارت رو تغییر بده\n"
+                    "• یا دوباره امتحان کن"
+                )
             
             context.chat_data['user_data'] = {}
             
         except ValueError:
             await update.message.reply_text("⚠️ لطفاً عدد وارد کن")
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📖 **راهنما:**\n\n"
+        "🔍 عبارت‌های پیشنهادی:\n"
+        "• طبیعت (nature)\n"
+        "• گل (flower)\n" 
+        "• پس‌زمینه (background)\n"
+        "• مردم (people)\n\n"
+        "⚡ ربات از روش مستقیم استفاده می‌کنه\n"
+        "🎯 سریع و بدون نیاز به مرورگر"
+    )
+
 def main():
-    print("🚀 شروع ربات...")
+    print("🚀 شروع ربات روی Railway...")
     
     if BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
         print("❌ BOT_TOKEN رو تنظیم کن")
@@ -140,9 +143,10 @@ def main():
     
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("✅ ربات آماده!")
+    print("✅ ربات آماده! (بدون Selenium)")
     app.run_polling()
 
 if __name__ == "__main__":

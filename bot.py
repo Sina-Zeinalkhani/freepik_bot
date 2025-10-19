@@ -15,7 +15,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # تنظیمات
-BOT_TOKEN = os.environ.get('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8458966976:AAGvp6xc5t3z62RAmNgHpBOxeQmVye0MUME')
 
 def get_image_links_alternative(query, num_links):
     """روش جایگزین بدون Selenium - استفاده از API یا اسکرپ ساده"""
